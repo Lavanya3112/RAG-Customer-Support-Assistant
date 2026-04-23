@@ -166,9 +166,9 @@ Used for response generation with fallback demo mode support.
 
 ## Internship Details
 
-Agentic AI Internship
-Innomatics Research Labs
-Intern ID: IN226104602
+* Agentic AI Internship
+* Innomatics Research Labs
+* Intern ID: IN226104602
 
 ---
 
