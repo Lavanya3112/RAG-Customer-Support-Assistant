@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+.env
+chroma_db/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.sqlite3
+*.db
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
