@@ -1,8 +1,6 @@
 # RAG-Based Customer Support Assistant
 
-## Innomatics Research Labs — Internship Project
-
-A production-grade **Retrieval-Augmented Generation (RAG)** system with **LangGraph workflow orchestration** and **Human-in-the-Loop (HITL)** escalation.
+## A production-grade Retrieval-Augmented Generation (RAG) system with LangGraph workflow orchestration and Human-in-the-Loop (HITL) escalation for customer support automation.
 
 This project was developed as the **Final Evaluation Project** for the Agentic AI Internship at Innomatics Research Labs.
 
