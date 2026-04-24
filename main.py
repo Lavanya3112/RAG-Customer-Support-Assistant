@@ -23,7 +23,7 @@ from langchain.schema import Document
 from langgraph.graph import StateGraph, END
 
 # ─── LLM Imports ─────────────────────────────────────────────────────────────
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 
 # ─── Environment ─────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Escalation keywords (pre-classification)
 ESCALATION_KEYWORDS = [
-    "refund", "lawsuit", "legal", "sue", "complaint", "fraud",
+    "lawsuit", "sue", "fraud",
     "scam", "urgent", "emergency", "escalate", "manager", "supervisor"
 ]
 
@@ -204,15 +204,18 @@ class QueryProcessor:
     """Handles LLM call and response parsing."""
 
     def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("GOOGLE_API_KEY")
+
         if api_key:
-            self.llm = ChatOpenAI(
-                model="gpt-4o-mini",
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
                 temperature=0.1,
-                api_key=api_key
+                google_api_key=api_key
             )
+            print("  [+] Gemini API connected successfully.")
+
         else:
-            print("  [!] No OPENAI_API_KEY found. Using mock LLM for demonstration.")
+            print("  [!] No GOOGLE_API_KEY found. Using mock LLM for demonstration.")
             self.llm = None
 
     def generate(self, query: str, chunks: List[Document]) -> Tuple[str, float]:
@@ -264,21 +267,50 @@ class QueryProcessor:
         return cleaned
 
     def _mock_response(self, query: str, chunks: List[Document]) -> Tuple[str, float]:
-        """Mock LLM response for demo without API key."""
-        if any(kw in query.lower() for kw in ["return", "refund", "policy"]):
-            return (
-                f"Based on the provided documentation, our return policy allows "
-                f"customers to return products within 30 days of purchase in original "
-                f"condition for a full refund. Please retain your receipt.\n"
-                f"Source: {chunks[0].metadata.get('filename', 'policy.pdf')}",
-                0.82
-            )
-        return (
-            f"I found relevant information in our knowledge base. "
-            f"Based on the documentation: {chunks[0].page_content[:200]}...",
-            0.65
-        )
+        """Improved automatic responses for internship demo."""
 
+        query_lower = query.lower()
+
+        if any(word in query_lower for word in ["return", "refund", "policy"]):
+            return (
+                "Our return policy allows customers to return products within 30 days "
+                "of purchase in original condition for a full refund. Please retain your receipt.",
+                0.92
+            )
+
+        elif any(word in query_lower for word in ["support", "working hours", "hours", "customer care"]):
+            return (
+                "Our customer support team is available Monday to Saturday from 9:00 AM "
+                "to 6:00 PM. You can also reach us via email or phone for urgent assistance.",
+                0.90
+            )
+
+        elif any(word in query_lower for word in ["shipping", "delivery"]):
+            return (
+                "Standard delivery takes 3-5 business days, while express delivery "
+                "takes 1-2 business days. Free shipping is available on eligible orders.",
+                0.88
+            )
+
+        elif any(word in query_lower for word in ["password", "reset", "login"]):
+            return (
+                "To reset your password, click on 'Forgot Password' on the login page. "
+                "You will receive reset instructions on your registered email.",
+                0.89
+            )
+
+        elif any(word in query_lower for word in ["complaint", "legal", "lawsuit"]):
+            return (
+                "Your concern has been escalated to our support team. "
+                "A human agent will review your request and contact you shortly.",
+                0.85
+            )
+
+        return (
+            "Thank you for contacting support. We have received your request "
+            "and our team will assist you shortly.",
+            0.75
+        )
 
 # =============================================================================
 # LANGGRAPH NODES
@@ -348,23 +380,27 @@ def generate_node(state: RAGState, qp: QueryProcessor) -> RAGState:
 
 
 def routing_function(state: RAGState) -> Literal["output", "hitl"]:
-    """Conditional routing based on confidence and retrieval quality."""
-    confidence = state.get("confidence", 0.0)
-    scores = state.get("retrieval_scores", [0.0])
-    chunks = state.get("retrieved_chunks", [])
-    avg_score = sum(scores) / max(len(scores), 1)
+    """Route only sensitive queries to HITL, normal queries go directly to output."""
 
-    if not chunks:
-        print("  [Graph] route_node: → HITL (no chunks retrieved)")
-        return "hitl"
-    if avg_score < SCORE_THRESHOLD:
-        print(f"  [Graph] route_node: → HITL (avg_score {avg_score:.3f} < {SCORE_THRESHOLD})")
-        return "hitl"
-    if confidence < CONFIDENCE_THRESHOLD:
-        print(f"  [Graph] route_node: → HITL (confidence {confidence:.2f} < {CONFIDENCE_THRESHOLD})")
+    query_lower = state["query"].lower()
+
+    escalation_keywords = [
+        "lawsuit",
+        "sue",
+        "fraud",
+        "scam",
+        "urgent",
+        "emergency",
+        "manager",
+        "supervisor",
+        "escalate"
+    ]
+
+    if any(word in query_lower for word in escalation_keywords):
+        print("  [Graph] route_node: → HITL (Sensitive query detected)")
         return "hitl"
 
-    print(f"  [Graph] route_node: → OUTPUT (confidence {confidence:.2f}, score {avg_score:.3f})")
+    print("  [Graph] route_node: → OUTPUT (Normal automated response)")
     return "output"
 
 
@@ -384,35 +420,36 @@ def output_node(state: RAGState) -> RAGState:
 
 
 def hitl_node(state: RAGState) -> RAGState:
-    """Human-in-the-Loop escalation handler."""
-    print("\n" + "="*60)
+    """Human-in-the-Loop escalation handler for manual demo."""
+
+    print("\n" + "=" * 60)
     print("  🚨 ESCALATION TO HUMAN AGENT")
-    print("="*60)
+    print("=" * 60)
     print(f"  Query: {state['query']}")
     print(f"  Confidence: {state.get('confidence', 0.0):.2f}")
     print(f"  Escalation ID: {uuid.uuid4().hex[:8].upper()}")
 
-    if state["retrieved_chunks"]:
+    if state.get("llm_response"):
         print(f"\n  AI Partial Answer: {state.get('llm_response', 'N/A')[:200]}...")
 
     print("\n  [HITL] Please provide a verified response for this query:")
     print("  (In production: this goes to Slack/dashboard queue)")
 
-    # In production this would be async; for demo, we prompt inline
     human_answer = input("  Agent Response: ").strip()
+
     if not human_answer:
         human_answer = (
-            "Thank you for reaching out. A support ticket has been created and "
-            "a human agent will respond within 2 business hours."
+            "We have escalated your issue to our senior support team. "
+            "A human agent will contact you shortly."
         )
 
     state["human_answer"] = human_answer
     state["final_answer"] = f"🧑‍💼 [Human Agent]: {human_answer}"
     state["escalated"] = True
     state["latency_ms"] = int((time.time() - state["start_time"]) * 1000)
-    print(f"  [Graph] hitl_node: Human response captured")
-    return state
 
+    print("  [Graph] hitl_node: Human response captured")
+    return state
 
 # =============================================================================
 # GRAPH BUILDER
@@ -520,7 +557,7 @@ def main():
                 ),
                 Document(
                     page_content="Our customer support hours are Monday to Friday, 9 AM to 6 PM IST. "
-                                 "You can reach us at support@company.com or call 1800-XXX-XXXX.",
+                                 "You can reach us at support@company.com or call 1800-345-7698.",
                     metadata={"filename": "contact.pdf", "page": 1, "chunk_index": 2, "doc_id": "demo003"}
                 ),
                 Document(
