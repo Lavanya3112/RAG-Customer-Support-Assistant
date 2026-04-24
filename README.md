@@ -19,7 +19,7 @@ pip install -r requirements.txt
 Create a `.env` file:
 
 ```env
-OPENAI_API_KEY=your_key_here
+GOOGLE_API_KEY=your_api_key_here
 ```
 
 > Without an API key, the system runs in **demo mode** with mock responses.
